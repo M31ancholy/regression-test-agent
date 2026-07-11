@@ -34,11 +34,20 @@ curl -X POST http://localhost:3000/agent \
 
 ```json
 {
-  "text": "已检查首页登录按钮……",
+  "runId": "d9eec188-ef1f-4f12-a29d-319e56967f07",
   "steps": 5,
-  "runId": "d9eec188-ef1f-4f12-a29d-319e56967f07"
+  "result": {
+    "status": "PASS",
+    "summary": "登录按钮点击后成功进入控制台",
+    "evidence": [
+      "点击前截图中存在登录按钮",
+      "点击后截图显示控制台页面"
+    ]
+  }
 }
 ```
+
+正常完成的测试只会返回 `PASS` 或 `FAIL`。主页无法访问、模型调用失败或无法生成合法结构化结论时，接口返回非 2xx 执行错误，而不是测试 `FAIL`。
 
 ## 代码结构
 

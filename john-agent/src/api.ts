@@ -62,7 +62,11 @@ export function buildServer() {
 
       const agent = createCheckAgent(page, runId);
       const result = await agent.generate({ prompt: parsed.data.prompt });
-      return { text: result.text, steps: result.steps.length, runId };
+      return {
+        runId,
+        steps: result.steps.length,
+        result: result.output,
+      };
     } finally {
       await context.close();
     }
