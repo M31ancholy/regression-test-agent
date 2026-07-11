@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 export function createScreenshotTool(page: Page, runId: string) {
   return tool({
-    description: '保存当前页面的全页截图作为回归测试产物。',
+    description: '截取当前 viewport，将图片返回给模型，同时保存为回归测试产物。',
     inputSchema: z.object({
       name: z
         .string()
@@ -19,8 +19,23 @@ export function createScreenshotTool(page: Page, runId: string) {
       const directory = resolve('artifacts', runId);
       await mkdir(directory, { recursive: true });
       const path = resolve(directory, `${name}.png`);
-      await page.screenshot({ path, fullPage: true });
-      return { success: true, path };
+      const image = await page.screenshot({ path });
+      return { success: true, path, image, viewport: page.viewportSize(), url: page.url() };
     },
+    toModelOutput: ({ output }) => ({
+      type: 'content',
+      value: [
+        {
+          type: 'text',
+          text: `当前页面截图。viewport=${output.viewport?.width ?? 'unknown'}x${output.viewport?.height ?? 'unknown'}，url=${output.url}`,
+        },
+        {
+          type: 'file',
+          mediaType: 'image/png',
+          data: { type: 'data', data: output.image },
+          filename: 'page.png',
+        },
+      ],
+    }),
   });
 }

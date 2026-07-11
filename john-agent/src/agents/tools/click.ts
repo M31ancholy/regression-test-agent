@@ -1,26 +1,29 @@
 import { tool } from 'ai';
 import type { Page } from 'playwright';
 import { z } from 'zod';
-import { summarizePage, waitForPageToSettle } from './page-summary.js';
 
 export function createClickTool(page: Page) {
   return tool({
-    description: '使用 Playwright selector 点击一个可见且唯一匹配的页面元素。',
+    description: '根据页面截图中的像素坐标点击页面。坐标原点位于截图左上角。',
     inputSchema: z.object({
-      selector: z.string().trim().min(1).max(500).describe('Playwright selector，例如 #submit 或 text=登录'),
+      x: z.number().int().nonnegative().describe('相对于 viewport 左侧的横坐标，单位为像素'),
+      y: z.number().int().nonnegative().describe('相对于 viewport 顶部的纵坐标，单位为像素'),
     }),
-    execute: async ({ selector }) => {
-      const locator = page.locator(selector);
-      const count = await locator.count();
-      if (count !== 1) {
-        return { success: false, error: `selector 匹配到 ${count} 个元素，必须唯一匹配` };
+    execute: async ({ x, y }) => {
+      const viewport = page.viewportSize();
+      if (!viewport) {
+        return { success: false, error: '当前页面没有可用的 viewport' };
       }
-      if (!(await locator.isVisible())) {
-        return { success: false, error: 'selector 匹配的元素不可见' };
+      if (x >= viewport.width || y >= viewport.height) {
+        return {
+          success: false,
+          error: `坐标 (${x}, ${y}) 超出 viewport ${viewport.width}x${viewport.height}`,
+        };
       }
-      await locator.click();
-      await waitForPageToSettle(page);
-      return { success: true, page: await summarizePage(page) };
+
+      await page.mouse.click(x, y);
+      await page.waitForTimeout(300);
+      return { success: true, x, y, url: page.url(), viewport };
     },
   });
 }

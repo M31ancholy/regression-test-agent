@@ -4,27 +4,28 @@ import { z } from 'zod';
 
 export function createFillTool(page: Page) {
   return tool({
-    description: '清空并填写一个可编辑的 input 或 textarea。',
+    description: '根据截图坐标点击输入区域，使用键盘全选原内容并输入新内容。',
     inputSchema: z.object({
-      selector: z.string().trim().min(1).max(500).describe('Playwright selector'),
+      x: z.number().int().nonnegative().describe('输入区域相对于 viewport 左侧的横坐标'),
+      y: z.number().int().nonnegative().describe('输入区域相对于 viewport 顶部的纵坐标'),
       value: z.string().max(10_000).describe('要填写的内容'),
     }),
-    execute: async ({ selector, value }) => {
-      const locator = page.locator(selector);
-      const count = await locator.count();
-      if (count !== 1) {
-        return { success: false, error: `selector 匹配到 ${count} 个元素，必须唯一匹配` };
+    execute: async ({ x, y, value }) => {
+      const viewport = page.viewportSize();
+      if (!viewport) {
+        return { success: false, error: '当前页面没有可用的 viewport' };
       }
-      if (!(await locator.isVisible())) {
-        return { success: false, error: 'selector 匹配的元素不可见' };
+      if (x >= viewport.width || y >= viewport.height) {
+        return {
+          success: false,
+          error: `坐标 (${x}, ${y}) 超出 viewport ${viewport.width}x${viewport.height}`,
+        };
       }
-      await locator.fill(value);
-      const isPassword = (await locator.getAttribute('type')) === 'password';
-      return {
-        success: true,
-        selector,
-        value: isPassword ? '[REDACTED]' : value,
-      };
+
+      await page.mouse.click(x, y);
+      await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+      await page.keyboard.type(value);
+      return { success: true, x, y, charactersEntered: value.length };
     },
   });
 }
