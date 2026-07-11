@@ -1,34 +1,47 @@
-# john-agent
+# Vercel AI SDK + Fastify Tool Loop Agent
 
-一个以“录制 → 回放 → 断言 → 报告”为主链路的回归测试 Agent。
+一个最小的 HTTP Agent 服务。`ToolLoopAgent` 会根据用户目标循环调用待办工具，直到给出最终答案或达到最多 10 步。
 
-## 项目结构
-
-```text
-cmd/john-agent/       CLI 入口
-internal/app/         应用编排与命令路由
-internal/config/      环境配置
-internal/runner/      用例执行核心
-internal/store/       用例持久化
-internal/report/      测试报告输出
-pkg/model/            可复用的领域模型
-```
-
-`runner.Driver` 是自动化能力的边界。后续可以分别接入浏览器、桌面或移动端驱动，不需要修改执行编排。
-
-## 开始使用
+## 运行
 
 ```bash
-make test
-make build
-./bin/john-agent help
+npm install
+cp .env.example .env
+# 编辑 .env，填入 OPENAI_API_KEY
+npm run dev
 ```
 
-默认运行数据写入 `.john/`。可通过 `JOHN_DATA_DIR` 和 `JOHN_ARTIFACT_DIR` 修改路径。
+服务默认监听 `http://localhost:3000`。
 
-## 下一阶段
+## API
 
-- 实现 `record` 命令与录制器
-- 接入首个浏览器自动化 Driver
-- 实现截图基线与视觉差异比较
-- 输出 HTML 测试报告
+健康检查：
+
+```bash
+curl http://localhost:3000/health
+```
+
+调用 Agent：
+
+```bash
+curl -X POST http://localhost:3000/agent \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"帮我把上线一个小网站拆成 3 条待办"}'
+```
+
+响应示例：
+
+```json
+{
+  "text": "已经为你创建了 3 条待办……",
+  "steps": 5
+}
+```
+
+## 代码结构
+
+- `src/agent.ts`：Agent、工具以及循环停止条件
+- `src/server.ts`：Fastify 路由、参数校验和错误处理
+- `src/index.ts`：服务启动入口
+
+待办数据只保存在内存中，进程退出后会清空。
