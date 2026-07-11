@@ -5,7 +5,7 @@ import { z } from 'zod';
 const todos = new Map<number, { id: number; title: string; done: boolean }>();
 let nextId = 1;
 
-export const agent = new ToolLoopAgent({
+export const checkAgent = new ToolLoopAgent({
   model: openai('gpt-4.1-mini'),
   instructions: [
     '你是一个简洁的待办事项助手。',

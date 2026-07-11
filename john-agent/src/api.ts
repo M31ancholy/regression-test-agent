@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import { z } from 'zod';
-import { agent } from './agent.js';
+import { checkAgent } from './agents/check-agent.js';
 
 const agentRequestSchema = z.object({
   prompt: z.string().trim().min(1).max(10_000),
@@ -24,7 +24,7 @@ export function buildServer() {
       return reply.code(503).send({ error: '服务端未配置 OPENAI_API_KEY' });
     }
 
-    const result = await agent.generate({ prompt: parsed.data.prompt });
+    const result = await checkAgent.generate({ prompt: parsed.data.prompt });
     return { text: result.text, steps: result.steps.length };
   });
 

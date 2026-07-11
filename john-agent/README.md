@@ -24,7 +24,7 @@ curl http://localhost:3000/health
 调用 Agent：
 
 ```bash
-curl -X POST http://localhost:3000/agent \
+curl -X POST http://localhost:3000/checkAgent \
   -H 'content-type: application/json' \
   -d '{"prompt":"帮我把上线一个小网站拆成 3 条待办"}'
 ```
@@ -40,7 +40,7 @@ curl -X POST http://localhost:3000/agent \
 
 ## 代码结构
 
-- `src/agent.ts`：Agent、工具以及循环停止条件
+- `src/check-agent.ts`：Agent、工具以及循环停止条件
 - `src/server.ts`：Fastify 路由、参数校验和错误处理
 - `src/index.ts`：服务启动入口
 
