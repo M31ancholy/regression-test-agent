@@ -1,8 +1,8 @@
 
 // 回归测试记录流程
-type overAllstepDesc = SingleStepDesc[]
+export type OverallStepDesc = SingleStepDesc[];
 
-type SingleStepDesc = {
-    desc:string
-    screenshotPath:string,
-}
+export type SingleStepDesc = {
+  desc: string;
+  screenshotPath: string;
+};
