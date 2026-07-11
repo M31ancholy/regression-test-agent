@@ -1,11 +1,12 @@
 # Vercel AI SDK + Fastify Tool Loop Agent
 
-一个最小的 HTTP Agent 服务。`ToolLoopAgent` 会根据用户目标循环调用待办工具，直到给出最终答案或达到最多 10 步。
+一个使用 Playwright 操作网页的自动化回归测试 Agent。每次请求会先在独立浏览器上下文中打开 `http://localhost:5173`，再由 `ToolLoopAgent` 循环读取和操作页面，直到完成测试目标或达到最多 10 步。
 
 ## 运行
 
 ```bash
 npm install
+npx playwright install chromium
 cp .env.example .env
 # 编辑 .env，填入 OPENAI_API_KEY
 npm run dev
@@ -24,24 +25,27 @@ curl http://localhost:3000/health
 调用 Agent：
 
 ```bash
-curl -X POST http://localhost:3000/checkAgent \
+curl -X POST http://localhost:3000/agent \
   -H 'content-type: application/json' \
-  -d '{"prompt":"帮我把上线一个小网站拆成 3 条待办"}'
+  -d '{"prompt":"检查首页登录按钮是否可以点击，并截图保存结果"}'
 ```
 
 响应示例：
 
 ```json
 {
-  "text": "已经为你创建了 3 条待办……",
-  "steps": 5
+  "text": "已检查首页登录按钮……",
+  "steps": 5,
+  "runId": "d9eec188-ef1f-4f12-a29d-319e56967f07"
 }
 ```
 
 ## 代码结构
 
-- `src/check-agent.ts`：Agent、工具以及循环停止条件
-- `src/server.ts`：Fastify 路由、参数校验和错误处理
+- `src/agents/check-agent.ts`：Agent 配置、instructions 和循环停止条件
+- `src/agents/tools/`：每个 Playwright 工具独立一个文件，`index.ts` 负责组装
+- `src/browser.ts`：Chromium 浏览器生命周期管理
+- `src/api.ts`：Fastify 路由、请求级浏览器上下文和错误处理
 - `src/index.ts`：服务启动入口
 
-待办数据只保存在内存中，进程退出后会清空。
+截图保存在 `artifacts/<runId>/`。每次请求结束后会关闭对应的浏览器上下文，不会跨请求共享 Cookie 或页面状态。

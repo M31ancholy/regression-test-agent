@@ -1,6 +1,11 @@
 import Fastify from 'fastify';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { checkAgent } from './agents/check-agent.js';
+import { createCheckAgent } from './agents/check-agent.js';
+import { BrowserManager } from './browser.js';
+
+const TARGET_URL = 'http://localhost:5173';
+const NAVIGATION_TIMEOUT_MS = 15_000;
 
 const agentRequestSchema = z.object({
   prompt: z.string().trim().min(1).max(10_000),
@@ -8,6 +13,15 @@ const agentRequestSchema = z.object({
 
 export function buildServer() {
   const app = Fastify({ logger: true });
+  const browserManager = new BrowserManager();
+
+  app.addHook('onReady', async () => {
+    await browserManager.start();
+  });
+
+  app.addHook('onClose', async () => {
+    await browserManager.close();
+  });
 
   app.get('/health', async () => ({ status: 'ok' }));
 
@@ -24,8 +38,34 @@ export function buildServer() {
       return reply.code(503).send({ error: '服务端未配置 OPENAI_API_KEY' });
     }
 
-    const result = await checkAgent.generate({ prompt: parsed.data.prompt });
-    return { text: result.text, steps: result.steps.length };
+    const runId = randomUUID();
+    const browser = await browserManager.start();
+    const context = await browser.newContext();
+
+    try {
+      const page = await context.newPage();
+      page.setDefaultTimeout(10_000);
+
+      try {
+        await page.goto(TARGET_URL, {
+          waitUntil: 'domcontentloaded',
+          timeout: NAVIGATION_TIMEOUT_MS,
+        });
+      } catch (error) {
+        request.log.warn({ err: error, runId, targetUrl: TARGET_URL }, 'target page navigation failed');
+        return reply.code(502).send({
+          error: '无法打开测试主页',
+          targetUrl: TARGET_URL,
+          runId,
+        });
+      }
+
+      const agent = createCheckAgent(page, runId);
+      const result = await agent.generate({ prompt: parsed.data.prompt });
+      return { text: result.text, steps: result.steps.length, runId };
+    } finally {
+      await context.close();
+    }
   });
 
   app.setErrorHandler((error, _request, reply) => {

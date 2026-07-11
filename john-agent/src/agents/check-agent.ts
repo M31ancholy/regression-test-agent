@@ -1,51 +1,23 @@
 import { openai } from '@ai-sdk/openai';
-import { stepCountIs, tool, ToolLoopAgent } from 'ai';
-import { z } from 'zod';
+import { stepCountIs, ToolLoopAgent } from 'ai';
+import type { Page } from 'playwright';
+import { createBrowserTools } from './tools/index.js';
 
-const todos = new Map<number, { id: number; title: string; done: boolean }>();
-let nextId = 1;
-
-export const checkAgent = new ToolLoopAgent({
-  model: openai('gpt-4.1-mini'),
-  instructions: [
-    '你是一个简洁的待办事项助手。',
-    '用户提出目标后，先拆成明确的待办，再读取列表并总结结果。',
-    '需要操作待办时必须调用工具，不要假装已经执行。',
-  ].join('\n'),
-  tools: {
-    addTodo: tool({
-      description: '添加一条待办事项',
-      inputSchema: z.object({
-        title: z.string().min(1).describe('待办事项内容'),
-      }),
-      execute: async ({ title }) => {
-        const todo = { id: nextId++, title, done: false };
-        todos.set(todo.id, todo);
-        return todo;
-      },
-    }),
-    listTodos: tool({
-      description: '读取当前所有待办事项',
-      inputSchema: z.object({}),
-      execute: async () => Array.from(todos.values()),
-    }),
-    completeTodo: tool({
-      description: '根据 id 完成一条待办事项',
-      inputSchema: z.object({
-        id: z.number().int().positive().describe('待办事项 id'),
-      }),
-      execute: async ({ id }) => {
-        const todo = todos.get(id);
-        if (!todo) return { success: false, error: `todo ${id} 不存在` };
-        todo.done = true;
-        return { success: true, todo };
-      },
-    }),
-  },
-  stopWhen: stepCountIs(10),
-  onStepFinish: ({ toolCalls }) => {
-    if (toolCalls.length > 0) {
-      console.log('tool calls:', toolCalls.map(call => call.toolName).join(', '));
-    }
-  },
-});
+export function createCheckAgent(page: Page, runId: string) {
+  return new ToolLoopAgent({
+    model: openai('gpt-4.1-mini'),
+    instructions: [
+      '你是一个自动化回归测试 Agent，负责在已经打开的网页中完成用户指定的测试目标。',
+      '执行操作前必须先调用 inspectPage 获取当前页面状态。',
+      '点击或输入后要再次检查页面。',
+      '完成后简洁总结执行过的操作、观察结果以及是否达到测试目标。',
+    ].join('\n'),
+    tools: createBrowserTools(page, runId),
+    stopWhen: stepCountIs(10),
+    onStepFinish: ({ toolCalls }) => {
+      if (toolCalls.length > 0) {
+        console.log(`[${runId}] tool calls:`, toolCalls.map(call => call.toolName).join(', '));
+      }
+    },
+  });
+}
