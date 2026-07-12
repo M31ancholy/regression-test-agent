@@ -3,6 +3,7 @@ import { Output, stepCountIs, ToolLoopAgent } from 'ai';
 import type { Page } from 'playwright';
 import { z } from 'zod';
 import { createBrowserTools } from './tools/index.js';
+import { johnAgentOptions } from '../common/agent-config.js';
 
 const testResultSchema = z.object({
   status: z.enum(['PASS', 'FAIL']).describe('测试是否满足用户 prompt 中描述的预期'),
@@ -10,7 +11,7 @@ const testResultSchema = z.object({
   evidence: z.array(z.string().min(1)).min(1).describe('从截图和实际操作中观察到的证据'),
 });
 
-export function createCheckAgent(page: Page, runId: string) {
+export function createCheckAgent(agentOpt:johnAgentOptions) {
   return new ToolLoopAgent({
     model: openai('gpt-5.6-sol'),
     instructions: [
@@ -24,7 +25,7 @@ export function createCheckAgent(page: Page, runId: string) {
       'click 或 fill 工具执行成功只表示操作已发送，不能单独作为 PASS 的依据。',
       '最终必须返回符合指定 schema 的测试结论、简洁总结和至少一条证据。',
     ].join('\n'),
-    tools: createBrowserTools(page, runId),
+    tools: createBrowserTools(agentOpt.page, agentOpt.runId),
     output: Output.object({
       schema: testResultSchema,
       name: 'regression_test_result',
@@ -33,7 +34,7 @@ export function createCheckAgent(page: Page, runId: string) {
     stopWhen: stepCountIs(20),
     onStepFinish: ({ toolCalls }) => {
       if (toolCalls.length > 0) {
-        console.log(`[${runId}] tool calls:`, toolCalls.map(call => call.toolName).join(', '));
+        console.log(`[${agentOpt.runId}] tool calls:`, toolCalls.map(call => call.toolName).join(', '));
       }
     },
   });

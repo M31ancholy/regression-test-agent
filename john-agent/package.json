@@ -14,6 +14,7 @@
     "dotenv": "latest",
     "fastify": "latest",
     "playwright": "^1.61.1",
+    "uuid": "^14.0.1",
     "zod": "latest"
   },
   "devDependencies": {
