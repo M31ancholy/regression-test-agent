@@ -4,6 +4,7 @@ import { chromium, type BrowserContext, type Page } from 'playwright';
 import type { BrowserOperation, OverallStepDesc } from './types.js';
 
 const SETTLE_TIME_MS = 350;
+const BRIDGE_READY_TIMEOUT_MS = 5_000;
 
 export type RecorderOptions = {
   url: string;
@@ -21,15 +22,39 @@ export async function recordSteps(options: RecorderOptions): Promise<OverallStep
   const steps: OverallStepDesc = [];
   let operationQueue = Promise.resolve();
   let stepNumber = 0;
+  let acceptingOperations = true;
+  let bridgeReadyResolve: (() => void) | undefined;
+  const bridgeReady = new Promise<void>(resolvePromise => {
+    bridgeReadyResolve = resolvePromise;
+  });
 
-  const save = async (page: Page, desc: string) => {
+  context.on('page', observedPage => {
+    observedPage.on('console', message => {
+      if (message.type() === 'error' && message.text().startsWith('[record-steps]')) {
+        console.error(`页面录制错误: ${message.text()}`);
+      }
+    });
+    observedPage.on('pageerror', error => {
+      console.error('页面脚本异常（可能影响录制）:', error.message);
+    });
+  });
+
+  const save = async (sourcePage: Page, desc: string) => {
+    await sourcePage.waitForTimeout(SETTLE_TIME_MS).catch(() => undefined);
+    const page = sourcePage.isClosed() ? latestOpenPage(context) : latestRelevantPage(context, sourcePage);
+    if (!page) throw new Error('没有可截图的浏览器页面');
+
+    await page.waitForLoadState('domcontentloaded', { timeout: 3_000 }).catch(() => undefined);
     stepNumber += 1;
     const filename = `${String(stepNumber).padStart(3, '0')}.png`;
     const absoluteScreenshotPath = resolve(screenshotDirectory, filename);
 
-    await page.waitForTimeout(SETTLE_TIME_MS).catch(() => undefined);
-    await page.waitForLoadState('domcontentloaded', { timeout: 3_000 }).catch(() => undefined);
-    await page.screenshot({ path: absoluteScreenshotPath });
+    try {
+      await page.screenshot({ path: absoluteScreenshotPath });
+    } catch (error) {
+      stepNumber -= 1;
+      throw error;
+    }
 
     steps.push({
       desc,
@@ -40,22 +65,35 @@ export async function recordSteps(options: RecorderOptions): Promise<OverallStep
   };
 
   await installOperationBridge(context, (sourcePage, operation) => {
+    if (operation.action === 'ready') {
+      bridgeReadyResolve?.();
+      bridgeReadyResolve = undefined;
+      return;
+    }
+    if (!acceptingOperations) return;
+
     operationQueue = operationQueue
-      .then(async () => {
-        const page = sourcePage.isClosed() ? latestOpenPage(context) : sourcePage;
-        if (page) await save(page, describeOperation(operation));
-      })
-      .catch(error => console.error('记录操作失败:', error));
+      .then(() => save(sourcePage, describeOperation(operation)))
+      .catch(error => console.error(`记录“${describeOperation(operation)}”失败:`, error));
   });
 
   const page = await context.newPage();
   await page.goto(options.url, { waitUntil: 'domcontentloaded' });
+
+  await Promise.race([
+    bridgeReady,
+    page.waitForTimeout(BRIDGE_READY_TIMEOUT_MS).then(() => {
+      throw new Error('页面录制桥接初始化超时，请检查页面脚本或终端错误信息');
+    }),
+  ]);
   await save(page, `打开网页 ${page.url()}`);
 
   console.log(`\n记录已开始：${options.url}`);
-  console.log('请在浏览器中操作。关闭浏览器窗口或按 Ctrl+C 后生成最终 steps.json。\n');
+  console.log('请在浏览器中操作。关闭初始浏览器窗口或按 Ctrl+C 后结束记录。\n');
 
   await waitUntilStopped(context, page);
+  await flushPendingPageOperations(context);
+  acceptingOperations = false;
   await operationQueue;
   await writeSteps(outputDirectory, steps);
   await browser.close().catch(() => undefined);
@@ -63,7 +101,7 @@ export async function recordSteps(options: RecorderOptions): Promise<OverallStep
   return steps;
 }
 
-async function installOperationBridge(
+export async function installOperationBridge(
   context: BrowserContext,
   onOperation: (page: Page, operation: BrowserOperation) => void,
 ) {
@@ -71,11 +109,31 @@ async function installOperationBridge(
     onOperation(page, operation);
   });
 
+  // tsx/esbuild adds calls to its __name helper when this function is serialized.
+  // Playwright executes it in the page, where that build-time helper does not exist.
+  await context.addInitScript({
+    content: 'globalThis.__name ??= (target) => target;',
+  });
+
   await context.addInitScript(() => {
     type RecorderWindow = Window & {
-      __recordBrowserOperation: (operation: BrowserOperation) => Promise<void>;
+      __recordBrowserOperation?: (operation: BrowserOperation) => Promise<void>;
+      __recordStepsInstalled?: boolean;
     };
     const recorderWindow = window as unknown as RecorderWindow;
+    if (recorderWindow.__recordStepsInstalled) return;
+    recorderWindow.__recordStepsInstalled = true;
+
+    const report = (operation: BrowserOperation) => {
+      const bridge = recorderWindow.__recordBrowserOperation;
+      if (!bridge) {
+        console.error('[record-steps] 页面桥接不存在，操作未被记录', operation);
+        return;
+      }
+      void bridge(operation).catch(error => {
+        console.error('[record-steps] 操作发送失败', error);
+      });
+    };
 
     const identify = (element: Element | null): string => {
       if (!element) return '未知元素';
@@ -90,13 +148,53 @@ async function installOperationBridge(
       return label ? `${element.tagName.toLowerCase()}「${label}」` : element.tagName.toLowerCase();
     };
 
+    const hasDedicatedEvent = (element: Element | null): boolean => {
+      if (!element) return false;
+      const control = element.closest('input, select, option, button');
+      if (control instanceof HTMLSelectElement || control instanceof HTMLOptionElement) return true;
+      if (control instanceof HTMLInputElement) {
+        return ['checkbox', 'radio', 'file'].includes(control.type) || (control.type === 'submit' && control.form !== null);
+      }
+      return control instanceof HTMLButtonElement && control.type === 'submit' && control.form !== null;
+    };
+
+    const inputTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>();
+    const reportValue = (element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement) => {
+      const existingTimer = inputTimers.get(element);
+      if (existingTimer) clearTimeout(existingTimer);
+      inputTimers.delete(element);
+
+      let value: string;
+      if (element instanceof HTMLInputElement && element.type === 'password') {
+        value = '[已隐藏]';
+      } else if (element instanceof HTMLInputElement && element.type === 'file') {
+        value = [...(element.files ?? [])].map(file => file.name).join(', ');
+      } else if (element instanceof HTMLInputElement && ['checkbox', 'radio'].includes(element.type)) {
+        value = element.checked ? '已选中' : '未选中';
+      } else {
+        value = element.value.slice(0, 200);
+      }
+
+      report({ action: 'change', target: identify(element), value });
+    };
+
     document.addEventListener(
       'click',
       event => {
-        void recorderWindow.__recordBrowserOperation({
-          action: 'click',
-          target: identify(event.target as Element),
-        });
+        const element = event.target as Element;
+        if (!hasDedicatedEvent(element)) report({ action: 'click', target: identify(element) });
+      },
+      true,
+    );
+
+    document.addEventListener(
+      'input',
+      event => {
+        const element = event.target;
+        if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) return;
+        const existingTimer = inputTimers.get(element);
+        if (existingTimer) clearTimeout(existingTimer);
+        inputTimers.set(element, setTimeout(() => reportValue(element), 500));
       },
       true,
     );
@@ -104,13 +202,14 @@ async function installOperationBridge(
     document.addEventListener(
       'change',
       event => {
-        const element = event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
-        const value = element.type === 'password' ? '[已隐藏]' : element.value.slice(0, 200);
-        void recorderWindow.__recordBrowserOperation({
-          action: 'change',
-          target: identify(element),
-          value,
-        });
+        const element = event.target;
+        if (
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLTextAreaElement ||
+          element instanceof HTMLSelectElement
+        ) {
+          reportValue(element);
+        }
       },
       true,
     );
@@ -119,25 +218,66 @@ async function installOperationBridge(
       'keydown',
       event => {
         if (event.key !== 'Enter' && event.key !== 'Escape') return;
-        void recorderWindow.__recordBrowserOperation({
-          action: 'keydown',
-          target: identify(event.target as Element),
-          key: event.key,
-        });
+        report({ action: 'keydown', target: identify(event.target as Element), key: event.key });
       },
       true,
     );
+
+    document.addEventListener(
+      'submit',
+      event => report({ action: 'submit', target: identify(event.target as Element) }),
+      true,
+    );
+
+    document.addEventListener(
+      'drop',
+      event => {
+        const filenames = [...(event.dataTransfer?.files ?? [])].map(file => file.name).join(', ');
+        report({ action: 'drop', target: identify(event.target as Element), value: filenames });
+      },
+      true,
+    );
+
+    let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+    document.addEventListener(
+      'scroll',
+      event => {
+        if (scrollTimer) clearTimeout(scrollTimer);
+        scrollTimer = setTimeout(() => {
+          const target = event.target instanceof Element ? identify(event.target) : '页面';
+          report({ action: 'scroll', target, value: `${Math.round(window.scrollX)},${Math.round(window.scrollY)}` });
+        }, 500);
+      },
+      true,
+    );
+
+    report({ action: 'ready', target: location.href });
   });
 }
 
-function describeOperation(operation: BrowserOperation): string {
+export function describeOperation(operation: BrowserOperation): string {
   if (operation.action === 'click') return `点击 ${operation.target}`;
   if (operation.action === 'change') return `在 ${operation.target} 中输入/选择「${operation.value ?? ''}」`;
-  return `在 ${operation.target} 按下 ${operation.key}`;
+  if (operation.action === 'keydown') return `在 ${operation.target} 按下 ${operation.key}`;
+  if (operation.action === 'submit') return `提交 ${operation.target}`;
+  if (operation.action === 'drop') {
+    return operation.value ? `拖放「${operation.value}」到 ${operation.target}` : `拖放到 ${operation.target}`;
+  }
+  if (operation.action === 'scroll') return `滚动 ${operation.target} 到 ${operation.value}`;
+  return `录制器已就绪 ${operation.target}`;
+}
+
+function latestRelevantPage(context: BrowserContext, sourcePage: Page): Page {
+  const pages = context.pages().filter(candidate => !candidate.isClosed());
+  return pages.at(-1) ?? sourcePage;
 }
 
 function latestOpenPage(context: BrowserContext): Page | undefined {
   return [...context.pages()].reverse().find(page => !page.isClosed());
+}
+
+async function flushPendingPageOperations(context: BrowserContext) {
+  await Promise.all(context.pages().map(page => page.waitForTimeout(600).catch(() => undefined)));
 }
 
 async function writeSteps(outputDirectory: string, steps: OverallStepDesc) {

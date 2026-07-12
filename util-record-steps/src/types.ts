@@ -6,7 +6,7 @@ export type SingleStepDesc = {
 export type OverallStepDesc = SingleStepDesc[];
 
 export type BrowserOperation = {
-  action: 'click' | 'change' | 'keydown';
+  action: 'ready' | 'click' | 'change' | 'keydown' | 'submit' | 'drop' | 'scroll';
   target: string;
   value?: string;
   key?: string;
