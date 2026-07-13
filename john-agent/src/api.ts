@@ -58,8 +58,8 @@ export function buildServer() {
             readyToTestURL: parsed.data.readyToTestURL ?? TARGET_URL,
           });
 
-      if (!process.env.OPENAI_API_KEY) {
-        return reply.code(503).send({ error: '服务端未配置 OPENAI_API_KEY' });
+      if (!process.env.LLM_API_KEY) {
+        return reply.code(503).send({ error: '服务端未配置 LLM_API_KEY' });
       }
 
       const browser = await browserManager.start();
