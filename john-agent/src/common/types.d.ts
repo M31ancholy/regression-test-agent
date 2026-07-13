@@ -1,4 +1,3 @@
-
 // 回归测试记录流程
 export type OverallStepDesc = SingleStepDesc[];
 
@@ -23,9 +22,6 @@ export type RecordingDocument = {
 export type PreparedTestStep = SingleStepDesc & {
   referenceScreenshotData: Uint8Array;
 };
-
-
-// Todo 测试状态机 结构
 
 export type TodoStatus = 'pending' | 'running' | 'passed' | 'failed';
 

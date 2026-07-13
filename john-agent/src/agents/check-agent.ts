@@ -40,7 +40,7 @@ export function createCheckAgent(agentOpt: johnAgentOptions) {
       name: 'regression_test_result',
       description: '自动化回归测试的最终 PASS 或 FAIL 结论及其视觉证据',
     }),
-    stopWhen: stepCountIs(20),
+    stopWhen: stepCountIs(50),
     onStepFinish: ({ toolCalls }) => {
       if (toolCalls.length > 0) {
         console.log(`[${agentOpt.runId}] tool calls:`, toolCalls.map(call => call.toolName).join(', '));
