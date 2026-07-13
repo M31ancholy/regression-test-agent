@@ -8,12 +8,42 @@
 npm install
 npx playwright install chromium
 cp .env.example .env
-# 编辑 .env，填入 OPENAI_API_KEY
+# 编辑 .env，填入 LLM_BASE_URL 和 LLM_API_KEY
 # RECORDINGS_ROOT 默认指向相邻的 ../util-record-steps
 npm run dev
 ```
 
 服务默认监听 `http://localhost:3000`。
+
+## CLI 直接运行 Agent
+
+如果只想本地观察 Agent 操作页面，可以绕过 HTTP 服务直接执行录制：
+
+```bash
+npm run agent -- \
+  --recording 2026-07-13T08-03-36-919Z \
+  --prompt "验证录制流程"
+```
+
+CLI 默认显示 Chromium 窗口。待测网页需要提前启动，例如：
+
+```bash
+cd ../webpage-for-testing
+npm run dev
+```
+
+可用参数：
+
+```text
+--recording <path>         录制目录，相对于 RECORDINGS_ROOT（必填）
+--prompt <text>            可选的整体测试说明
+--url <url>                旧版录制缺少 targetUrl 时使用
+--recordings-root <path>   覆盖 RECORDINGS_ROOT
+--headless                 使用无界面浏览器
+--help                     显示帮助
+```
+
+执行完成后会输出 Run ID、PASS/FAIL、Todo 结果和截图目录。退出码为 `0=PASS`、`1=FAIL`、`2=参数或执行错误`。
 
 ## API
 

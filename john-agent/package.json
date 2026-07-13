@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "agent": "node --import tsx src/cli.ts",
     "dev": "tsx src/server.ts",
     "start": "node --import tsx src/server.ts",
     "test": "node --import tsx --test test/*.test.ts",
