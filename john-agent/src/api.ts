@@ -2,13 +2,15 @@ import Fastify from 'fastify';
 import { z } from 'zod';
 import { BrowserManager } from './browser.js';
 import { startWorkFlow, WorkFlowNavigationError } from './modules/john-work/workflow.js';
-import { NIL } from 'uuid';
-import { OverallStepDesc } from './common/types.js';
 
 const TARGET_URL = 'http://localhost:5173';
 
 const agentRequestSchema = z.object({
   prompt: z.string().trim().min(1).max(10_000),
+  steps: z.array(z.object({
+    desc: z.string().trim().min(1).max(2_000),
+    screenshotPath: z.string().trim().min(1),
+  })).min(1),
 });
 
 export function buildServer() {
@@ -41,12 +43,9 @@ export function buildServer() {
     const browser = await browserManager.start();
 
     try {
-      // TODO Hack一下
-      const steps = {} as OverallStepDesc;
-
       return await startWorkFlow({
         readyToTestURL: TARGET_URL,
-        steps: steps, 
+        steps: parsed.data.steps,
         prompt: parsed.data.prompt,
       }, browser);
     } catch (error) {

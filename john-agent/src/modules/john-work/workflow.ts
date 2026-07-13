@@ -2,6 +2,7 @@ import type { Browser } from 'playwright';
 import { createCheckAgent } from '../../agents/check-agent.js';
 import { createRunId, type johnAgentOptions } from '../../common/agent-config.js';
 import type { workFlowOptions } from '../../common/workflow-config.js';
+import type { TodoTestItem } from '../../common/types.js';
 
 const NAVIGATION_TIMEOUT_MS = 15_000;
 
@@ -36,12 +37,17 @@ export async function startWorkFlow(option: workFlowOptions, browser: Browser) {
       throw new WorkFlowNavigationError(runId, option.readyToTestURL, { cause: error });
     }
 
-
-
+    const todos: TodoTestItem[] = option.steps.map((step, index) => ({
+      index,
+      desc: step.desc,
+      referenceScreenshotPath: step.screenshotPath,
+      status: index === 0 ? 'running' : 'pending',
+    }));
     const agentOpt: johnAgentOptions = {
       readyToTestURL: option.readyToTestURL,
       page,
       runId,
+      todos,
     };
     const agent = createCheckAgent(agentOpt);
     const result = await agent.generate({ prompt: option.prompt });
@@ -50,6 +56,7 @@ export async function startWorkFlow(option: workFlowOptions, browser: Browser) {
       runId,
       steps: result.steps.length,
       result: result.output,
+      todos,
     };
   } finally {
     await context.close();

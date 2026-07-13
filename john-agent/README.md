@@ -27,7 +27,7 @@ curl http://localhost:3000/health
 ```bash
 curl -X POST http://localhost:3000/agent \
   -H 'content-type: application/json' \
-  -d '{"prompt":"检查首页登录按钮是否可以点击，并截图保存结果"}'
+  -d '{"prompt":"检查首页登录按钮是否可以点击，并截图保存结果","steps":[{"desc":"点击登录按钮","screenshotPath":"recordings/login-button.png"}]}'
 ```
 
 响应示例：
@@ -43,7 +43,16 @@ curl -X POST http://localhost:3000/agent \
       "点击前截图中存在登录按钮",
       "点击后截图显示控制台页面"
     ]
-  }
+  },
+  "todos": [
+    {
+      "index": 0,
+      "desc": "点击登录按钮",
+      "referenceScreenshotPath": "recordings/login-button.png",
+      "status": "passed",
+      "summary": "登录按钮点击成功"
+    }
+  ]
 }
 ```
 

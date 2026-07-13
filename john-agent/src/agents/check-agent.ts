@@ -4,6 +4,7 @@ import type { Page } from 'playwright';
 import { z } from 'zod';
 import { createBrowserTools } from './tools/index.js';
 import { johnAgentOptions } from '../common/agent-config.js';
+import type { TodoTestItem } from '../common/types.js';
 
 const testResultSchema = z.object({
   status: z.enum(['PASS', 'FAIL']).describe('测试是否满足用户 prompt 中描述的预期'),
@@ -11,7 +12,7 @@ const testResultSchema = z.object({
   evidence: z.array(z.string().min(1)).min(1).describe('从截图和实际操作中观察到的证据'),
 });
 
-export function createCheckAgent(agentOpt:johnAgentOptions) {
+export function createCheckAgent(agentOpt: johnAgentOptions) {
   return new ToolLoopAgent({
     model: openai('gpt-5.6-sol'),
     instructions: [
@@ -23,9 +24,12 @@ export function createCheckAgent(agentOpt:johnAgentOptions) {
       '只有截图明确证明用户 prompt 中的预期成立时才能返回 PASS。',
       '预期未满足、出现错误页面或实际行为与预期不符时返回 FAIL。',
       'click 或 fill 工具执行成功只表示操作已发送，不能单独作为 PASS 的依据。',
+      `你必须严格按 index 顺序执行以下 todo：${JSON.stringify(agentOpt.todos)}`,
+      '每个 running todo 完成验证后，必须调用 updateTodo 标记为 passed 或 failed，然后才能继续。',
+      'updateTodo 返回 success=false 时应根据 error 修正调用，不能跳过当前 todo。',
       '最终必须返回符合指定 schema 的测试结论、简洁总结和至少一条证据。',
     ].join('\n'),
-    tools: createBrowserTools(agentOpt.page, agentOpt.runId),
+    tools: createBrowserTools(agentOpt.page, agentOpt.runId, agentOpt.todos),
     output: Output.object({
       schema: testResultSchema,
       name: 'regression_test_result',
