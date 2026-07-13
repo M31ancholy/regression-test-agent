@@ -7,6 +7,23 @@ export type SingleStepDesc = {
   screenshotPath: string;
 };
 
+export type RecordingViewport = {
+  width: number;
+  height: number;
+};
+
+export type RecordingDocument = {
+  version: 1;
+  targetUrl: string;
+  viewport: RecordingViewport;
+  steps: OverallStepDesc;
+};
+
+// 经过路径校验并读入参考图后，workflow 内部使用的步骤。
+export type PreparedTestStep = SingleStepDesc & {
+  referenceScreenshotData: Uint8Array;
+};
+
 
 // Todo 测试状态机 结构
 

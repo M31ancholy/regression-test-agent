@@ -2,24 +2,35 @@ import Fastify from 'fastify';
 import { z } from 'zod';
 import { BrowserManager } from './browser.js';
 import { startWorkFlow, WorkFlowNavigationError } from './modules/john-work/workflow.js';
+import {
+  loadRecordingDirectory,
+  prepareInlineSteps,
+  RecordingValidationError,
+} from './common/recording-loader.js';
 
 const TARGET_URL = 'http://localhost:5173';
 
-const agentRequestSchema = z.object({
-  prompt: z.string().trim().min(1).max(10_000),
+export const agentRequestSchema = z.object({
+  prompt: z.string().trim().min(1).max(10_000).optional(),
+  readyToTestURL: z.string().url().optional(),
+  recordingPath: z.string().trim().min(1).max(1_000).optional(),
   steps: z.array(z.object({
     desc: z.string().trim().min(1).max(2_000),
     screenshotPath: z.string().trim().min(1),
-  })).min(1),
+  })).min(1).optional(),
+}).superRefine((value, context) => {
+  if ((value.recordingPath === undefined) === (value.steps === undefined)) {
+    context.addIssue({
+      code: 'custom',
+      message: 'recordingPath 和 steps 必须且只能提供一个',
+      path: ['recordingPath'],
+    });
+  }
 });
 
 export function buildServer() {
   const app = Fastify({ logger: true });
   const browserManager = new BrowserManager();
-
-  app.addHook('onReady', async () => {
-    await browserManager.start();
-  });
 
   app.addHook('onClose', async () => {
     await browserManager.close();
@@ -36,19 +47,36 @@ export function buildServer() {
       });
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return reply.code(503).send({ error: '服务端未配置 OPENAI_API_KEY' });
-    }
-
-    const browser = await browserManager.start();
-
     try {
+      const preparedRecording = parsed.data.recordingPath !== undefined
+        ? await loadRecordingDirectory({
+            recordingPath: parsed.data.recordingPath,
+            readyToTestURL: parsed.data.readyToTestURL,
+          })
+        : await prepareInlineSteps({
+            steps: parsed.data.steps!,
+            readyToTestURL: parsed.data.readyToTestURL ?? TARGET_URL,
+          });
+
+      if (!process.env.OPENAI_API_KEY) {
+        return reply.code(503).send({ error: '服务端未配置 OPENAI_API_KEY' });
+      }
+
+      const browser = await browserManager.start();
       return await startWorkFlow({
-        readyToTestURL: TARGET_URL,
-        steps: parsed.data.steps,
+        readyToTestURL: preparedRecording.readyToTestURL,
+        viewport: preparedRecording.viewport,
+        steps: preparedRecording.steps,
         prompt: parsed.data.prompt,
       }, browser);
     } catch (error) {
+      if (error instanceof RecordingValidationError) {
+        request.log.warn({ err: error }, 'recording validation failed');
+        return reply.code(400).send({
+          error: '录制内容无效',
+          details: error.message,
+        });
+      }
       if (error instanceof WorkFlowNavigationError) {
         request.log.warn(
           { err: error.cause, runId: error.runId, targetUrl: error.targetUrl },

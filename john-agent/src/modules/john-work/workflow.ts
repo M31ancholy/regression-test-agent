@@ -21,7 +21,7 @@ export class WorkFlowNavigationError extends Error {
 // Agent 必须从这个函数启动，以确保每次运行都有独立的浏览器上下文和 runId。
 export async function startWorkFlow(option: workFlowOptions, browser: Browser) {
   const runId = createRunId();
-  const context = await browser.newContext();
+  const context = await browser.newContext(option.viewport ? { viewport: option.viewport } : undefined);
 
   try {
     // 准备playwright page 对象
@@ -43,14 +43,20 @@ export async function startWorkFlow(option: workFlowOptions, browser: Browser) {
       referenceScreenshotPath: step.screenshotPath,
       status: index === 0 ? 'running' : 'pending',
     }));
+    const referenceScreenshots = new Map(
+      option.steps.map((step, index) => [index, step.referenceScreenshotData]),
+    );
     const agentOpt: johnAgentOptions = {
       readyToTestURL: option.readyToTestURL,
       page,
       runId,
       todos,
+      referenceScreenshots,
     };
     const agent = createCheckAgent(agentOpt);
-    const result = await agent.generate({ prompt: option.prompt });
+    const result = await agent.generate({
+      prompt: option.prompt ?? '严格按录制 todo 执行并验证全部回归测试步骤。',
+    });
 
     return {
       runId,

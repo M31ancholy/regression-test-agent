@@ -1,10 +1,8 @@
 import { openai } from '@ai-sdk/openai';
 import { Output, stepCountIs, ToolLoopAgent } from 'ai';
-import type { Page } from 'playwright';
 import { z } from 'zod';
 import { createBrowserTools } from './tools/index.js';
-import { johnAgentOptions } from '../common/agent-config.js';
-import type { TodoTestItem } from '../common/types.js';
+import type { johnAgentOptions } from '../common/agent-config.js';
 
 const testResultSchema = z.object({
   status: z.enum(['PASS', 'FAIL']).describe('测试是否满足用户 prompt 中描述的预期'),
@@ -25,11 +23,18 @@ export function createCheckAgent(agentOpt: johnAgentOptions) {
       '预期未满足、出现错误页面或实际行为与预期不符时返回 FAIL。',
       'click 或 fill 工具执行成功只表示操作已发送，不能单独作为 PASS 的依据。',
       `你必须严格按 index 顺序执行以下 todo：${JSON.stringify(agentOpt.todos)}`,
+      '开始每个 running todo 时，必须先调用 getCurrentTodo 查看该步骤描述和操作完成后的录制参考图。',
+      '录制参考图只表示预期的步骤结果；必须再用 screenshot 观察当前实际页面。',
       '每个 running todo 完成验证后，必须调用 updateTodo 标记为 passed 或 failed，然后才能继续。',
       'updateTodo 返回 success=false 时应根据 error 修正调用，不能跳过当前 todo。',
       '最终必须返回符合指定 schema 的测试结论、简洁总结和至少一条证据。',
     ].join('\n'),
-    tools: createBrowserTools(agentOpt.page, agentOpt.runId, agentOpt.todos),
+    tools: createBrowserTools(
+      agentOpt.page,
+      agentOpt.runId,
+      agentOpt.todos,
+      agentOpt.referenceScreenshots,
+    ),
     output: Output.object({
       schema: testResultSchema,
       name: 'regression_test_result',

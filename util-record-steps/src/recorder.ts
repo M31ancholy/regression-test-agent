@@ -1,10 +1,16 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { relative, resolve } from 'node:path';
 import { chromium, type BrowserContext, type Page } from 'playwright';
-import type { BrowserOperation, OverallStepDesc } from './types.js';
+import type {
+  BrowserOperation,
+  OverallStepDesc,
+  RecordingDocument,
+  RecordingViewport,
+} from './types.js';
 
 const SETTLE_TIME_MS = 350;
 const BRIDGE_READY_TIMEOUT_MS = 5_000;
+const RECORDING_VIEWPORT: RecordingViewport = { width: 1440, height: 900 };
 
 export type RecorderOptions = {
   url: string;
@@ -12,14 +18,15 @@ export type RecorderOptions = {
   headless?: boolean;
 };
 
-export async function recordSteps(options: RecorderOptions): Promise<OverallStepDesc> {
+export async function recordSteps(options: RecorderOptions): Promise<RecordingDocument> {
   const outputDirectory = resolve(options.outputDirectory ?? 'recordings', createRunId());
   const screenshotDirectory = resolve(outputDirectory, 'screenshots');
   await mkdir(screenshotDirectory, { recursive: true });
 
   const browser = await chromium.launch({ headless: options.headless ?? false });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const context = await browser.newContext({ viewport: RECORDING_VIEWPORT });
   const steps: OverallStepDesc = [];
+  let targetUrl = new URL(options.url).toString();
   let operationQueue = Promise.resolve();
   let stepNumber = 0;
   let acceptingOperations = true;
@@ -60,7 +67,7 @@ export async function recordSteps(options: RecorderOptions): Promise<OverallStep
       desc,
       screenshotPath: relative(outputDirectory, absoluteScreenshotPath),
     });
-    await writeSteps(outputDirectory, steps);
+    await writeSteps(outputDirectory, createRecordingDocument(targetUrl, RECORDING_VIEWPORT, steps));
     console.log(`[${stepNumber}] ${desc} -> ${absoluteScreenshotPath}`);
   };
 
@@ -79,6 +86,7 @@ export async function recordSteps(options: RecorderOptions): Promise<OverallStep
 
   const page = await context.newPage();
   await page.goto(options.url, { waitUntil: 'domcontentloaded' });
+  targetUrl = page.url();
 
   await Promise.race([
     bridgeReady,
@@ -95,10 +103,11 @@ export async function recordSteps(options: RecorderOptions): Promise<OverallStep
   await flushPendingPageOperations(context);
   acceptingOperations = false;
   await operationQueue;
-  await writeSteps(outputDirectory, steps);
+  const recording = createRecordingDocument(targetUrl, RECORDING_VIEWPORT, steps);
+  await writeSteps(outputDirectory, recording);
   await browser.close().catch(() => undefined);
   console.log(`记录完成：${resolve(outputDirectory, 'steps.json')}`);
-  return steps;
+  return recording;
 }
 
 export async function installOperationBridge(
@@ -280,8 +289,21 @@ async function flushPendingPageOperations(context: BrowserContext) {
   await Promise.all(context.pages().map(page => page.waitForTimeout(600).catch(() => undefined)));
 }
 
-async function writeSteps(outputDirectory: string, steps: OverallStepDesc) {
-  await writeFile(resolve(outputDirectory, 'steps.json'), `${JSON.stringify(steps, null, 2)}\n`, 'utf8');
+export function createRecordingDocument(
+  targetUrl: string,
+  viewport: RecordingViewport,
+  steps: OverallStepDesc,
+): RecordingDocument {
+  return {
+    version: 1,
+    targetUrl,
+    viewport: { ...viewport },
+    steps: steps.map(step => ({ ...step })),
+  };
+}
+
+async function writeSteps(outputDirectory: string, recording: RecordingDocument) {
+  await writeFile(resolve(outputDirectory, 'steps.json'), `${JSON.stringify(recording, null, 2)}\n`, 'utf8');
 }
 
 function createRunId(): string {

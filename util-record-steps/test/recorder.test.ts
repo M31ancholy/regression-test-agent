@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { describeOperation } from '../src/recorder.js';
+import { createRecordingDocument, describeOperation } from '../src/recorder.js';
 
 test('formats meaningful browser operations as Chinese step descriptions', () => {
   assert.equal(describeOperation({ action: 'click', target: 'button「登录」' }), '点击 button「登录」');
@@ -21,4 +21,22 @@ test('formats meaningful browser operations as Chinese step descriptions', () =>
     describeOperation({ action: 'scroll', target: '页面', value: '0,640' }),
     '滚动 页面 到 0,640',
   );
+});
+
+test('creates a versioned recording document with URL, viewport and copied steps', () => {
+  const steps = [{ desc: '点击登录按钮', screenshotPath: 'screenshots/001.png' }];
+  const document = createRecordingDocument(
+    'http://localhost:5173/login',
+    { width: 1440, height: 900 },
+    steps,
+  );
+
+  assert.deepEqual(document, {
+    version: 1,
+    targetUrl: 'http://localhost:5173/login',
+    viewport: { width: 1440, height: 900 },
+    steps,
+  });
+  assert.notEqual(document.steps, steps);
+  assert.notEqual(document.steps[0], steps[0]);
 });

@@ -30,17 +30,25 @@ recordings/<时间>/
 
 启动时会等待页面中的录制桥接就绪。如果终端提示“页面录制桥接初始化超时”，说明页面事件没有成功连接到录制进程，应先处理该错误，而不是继续操作浏览器。
 
-`steps.json` 的结构与 `john-agent/src/types.d.ts` 一致：
+`steps.json` 会保存格式版本、实际打开的 URL、录制 viewport 和步骤。每个 `screenshotPath` 仍相对于当次录制目录：
 
 ```json
 [
-  {
-    "desc": "打开网页 http://localhost:5173/",
-    "screenshotPath": "screenshots/001.png"
+  "version": 1,
+  "targetUrl": "http://localhost:5173/",
+  "viewport": {
+    "width": 1440,
+    "height": 900
   },
-  {
-    "desc": "点击 button「登录」",
-    "screenshotPath": "screenshots/002.png"
-  }
-]
+  "steps": [
+    {
+      "desc": "打开网页 http://localhost:5173/",
+      "screenshotPath": "screenshots/001.png"
+    },
+    {
+      "desc": "点击 button「登录」",
+      "screenshotPath": "screenshots/002.png"
+    }
+  ]
+}
 ```

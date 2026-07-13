@@ -1,6 +1,6 @@
-import { Page } from 'playwright';
+import type { Page } from 'playwright';
 import { v4 as uuidv4 } from 'uuid';
-import { TodoTestItem } from './types.js';
+import type { TodoTestItem } from './types.js';
 
 export type johnAgentOptions = {
     // agent 需要测试的网址
@@ -9,7 +9,8 @@ export type johnAgentOptions = {
     page: Page
     runId:string
     // 传入的具体回归测试步骤
-    todos?: TodoTestItem[]
+    todos: TodoTestItem[]
+    referenceScreenshots: ReadonlyMap<number, Uint8Array>
 }
 
 export function createRunId(): string {
