@@ -1,4 +1,4 @@
-import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenAI, OpenAILanguageModelResponsesOptions } from '@ai-sdk/openai';
 import { Output, stepCountIs, ToolLoopAgent } from 'ai';
 import { z } from 'zod';
 import { createBrowserTools } from './tools/index.js';
@@ -18,7 +18,12 @@ export function createCheckAgent(agentOpt: johnAgentOptions) {
   });
 
   return new ToolLoopAgent({
-    model: customLlmProvider.chat("gpt-5.6-sol"),
+    model: customLlmProvider("gpt-5.6-sol"),
+    providerOptions: {
+      openai: {
+        store: false,
+      } satisfies OpenAILanguageModelResponsesOptions,
+    },
     instructions: [
       '你是一个自动化回归测试 Agent，负责在已经打开的网页中完成用户指定的测试目标。',
       '你的页面观察来源只有 screenshot 工具返回的图片，不要使用或猜测 DOM selector。',
